@@ -4,12 +4,13 @@
 
 /*global MocksHelper, MockAttachment, MockL10n, loadBodyHTML,
          Compose, Attachment, MockMozActivity, Settings, Utils,
-         AttachmentMenu */
+         AttachmentMenu, Drafts, Draft */
 
 'use strict';
 
 requireApp('sms/js/compose.js');
 requireApp('sms/js/utils.js');
+requireApp('sms/js/drafts.js');
 
 requireApp('sms/test/unit/mock_l10n.js');
 requireApp('sms/test/unit/mock_attachment.js');
@@ -288,6 +289,47 @@ suite('compose_test.js', function() {
 
       teardown(function() {
         Compose.clear();
+      });
+    });
+
+    suite('Getting Message via getDraft', function() {
+      var d1, d2;
+      setup(function() {
+        Compose.clear();
+        Drafts.clear();
+        d1 = new Draft({
+          content: [mockAttachment(), 'hello'],
+          threadId: 1
+        });
+        d2 = new Draft({
+          content: ['I am a draft'],
+          threadId: 2
+        });
+        Drafts.add(d1).add(d2);
+      });
+      teardown(function() {
+        Compose.clear();
+        Drafts.clear();
+      });
+      test('Draft with attachment', function() {
+        Compose.getDraft(1);
+        var txt = Compose.getContent();
+        assert.ok(txt[0] instanceof MockAttachment, 'Attachment is recovered');
+        assert.equal(txt[1], 'hello');
+      });
+      test('Draft with text', function() {
+        Compose.getDraft(2);
+        var txt = Compose.getContent();
+        assert.equal(txt, 'I am a draft');
+      });
+      test('getContent feeding into getDraft', function() {
+        Compose.getDraft(2);
+        Drafts.add(new Draft({
+          content: Compose.getContent(),
+          threadId: 3
+        }));
+        Compose.getDraft(3);
+        assert.equal(Compose.getContent()[0], 'I am a draft');
       });
     });
 

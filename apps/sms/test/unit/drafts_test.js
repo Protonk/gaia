@@ -174,6 +174,19 @@ suite('Drafts', function() {
       assert.equal(list.length, 0, 'No drafts returned for id 10');
     });
 
+    suite('has', function() {
+      test('return false for non-existent draft', function() {
+        assert.ok(!Drafts.has(10));
+      });
+      test('return true for null', function() {
+        assert.ok(Drafts.has(null));
+      });
+      test('return true for integer ids', function() {
+        assert.ok(Drafts.has(1));
+        assert.ok(Drafts.has(42));
+      });
+    });
+
   });
 
   suite('clear() >', function() {

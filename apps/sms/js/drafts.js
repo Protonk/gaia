@@ -89,6 +89,16 @@
       return this;
     },
     /**
+     * has
+     *
+     * Check if a threadId exists in the drafts index
+     *
+     * @return {Boolean} Return true if id is in the index.
+     */
+    has: function(id) {
+      return draftIndex.has(id);
+    },
+    /**
      * store
      *
      * Store draftIndex held in memory to local storage

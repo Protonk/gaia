@@ -1289,6 +1289,10 @@ var ThreadUI = global.ThreadUI = {
     };
 
     MessageManager.getMessages(renderingOptions);
+
+    // Check for drafts when rendering messages
+    Compose.getDraft(threadId);
+
     // force the next scroll to bottom
     this.isScrolledManually = false;
   },

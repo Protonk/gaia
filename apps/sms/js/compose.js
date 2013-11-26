@@ -1,7 +1,7 @@
 /* -*- Mode: js; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- /
 /* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 
-/*global Settings, Utils, Attachment, AttachmentMenu, MozActivity */
+/*global Settings, Utils, Attachment, AttachmentMenu, MozActivity, Drafts */
 /*exported Compose */
 
 'use strict';
@@ -287,6 +287,25 @@ var Compose = (function() {
       }
 
       return content;
+    },
+
+    /** Render draft from data store
+     * @param {Number} ThreadId for the specific thread. Potentially null.
+     *
+     */
+
+    getDraft: function(id) {
+      // If no drafts for thread, no need to render
+      if (!Drafts.has(id)) {
+        return;
+      }
+      // Clear out the composer if we're actually going to add content
+      Compose.clear();
+      // Draft messages are accessed as a pseudo-array
+      Drafts.byId(id).forEach(function(message) {
+        // Content is an array
+        message.content.forEach(Compose.append, Compose);
+      });
     },
 
     getText: function() {
