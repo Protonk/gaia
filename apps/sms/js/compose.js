@@ -1,7 +1,8 @@
 /* -*- Mode: js; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- /
 /* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 
-/*global Settings, Utils, Attachment, AttachmentMenu, MozActivity */
+/*global Settings, Utils, Attachment, AttachmentMenu, MozActivity, Threads,
+  Drafts */
 /*exported Compose */
 
 'use strict';
@@ -284,20 +285,21 @@ var Compose = (function() {
       return content;
     },
 
-    /** Render draft
+    /** Preload draft from draftId into composer
      *
-     * @param {Draft} draft Draft to be loaded into the composer
+     * @param {[(Number|String)]} threadId Id associated with draft content
      *
      */
 
-    fromDraft: function(draft) {
+    fromDraft: function(threadId) {
       // Clear out the composer
       Compose.clear();
 
       // If we don't have a draft, return only having cleared the composer
-      if (!draft) {
+      if (!Drafts.has(threadId)) {
         return;
       }
+      var draft = Drafts.get(threadId);
       // draft content is an array
       draft.content.forEach(function(fragment) {
         // If the fragment is an attachment

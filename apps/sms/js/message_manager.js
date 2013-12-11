@@ -239,14 +239,11 @@ var MessageManager = {
   },
 
   onHashChange: function mm_onHashChange(e) {
+    var hash = window.location.hash;
+
     // Ensure that no specific element is left focused
     // when changing UI panels
     document.activeElement.blur();
-
-    function getId() {
-      var matches = /\bthread=(.+)$/.exec(window.location.hash);
-      return (matches && matches.length) ? (matches[1].trim()) : null;
-    }
 
     // Group Participants should never persist any hash changes
     ThreadUI.groupView.reset();
@@ -256,9 +253,71 @@ var MessageManager = {
     ThreadUI.cancelEdit();
     ThreadListUI.cancelEdit();
 
-    var self = this;
+    // If the hash contains 'thread=' we are either in a
+    // conversation with participants or a new message draft
+    // with recipients. We disambiguate these cases through the
+    // id in the hash.
+    var threadId = Threads.idFromHash(hash);
+    if (threadId) {
 
-    switch (window.location.hash) {
+      // If the id is numeric (e.g. 'thread=15'):
+      // participants are fixed and not editable
+      // Draft content will only impact the composer
+      if (!Number.isNaN(+threadId)) {
+          var willSlide = true;
+          // if we were previously composing a message - remove the class
+          // and skip the "slide" animation
+          // Otherwise we will slide in
+          if (this.threadMessages.classList.contains('new')) {
+            this.threadMessages.classList.remove('new');
+            willSlide = false;
+          }
+
+          var finishTransition = function finishTransition() {
+            // hashchanges from #group-view back to #thread=n
+            // are considered "in thread" and should not
+            // trigger a complete re-rendering of the messages
+            // in the thread.
+            if (!ThreadUI.inThread) {
+              ThreadUI.inThread = true;
+              ThreadUI.renderMessages(threadId);
+            }
+            ThreadListUI.mark(threadId, 'read');
+            Compose.fromDraft(threadId);
+          };
+
+
+          // Update Header can potentially be called asynchronously
+          // So we update composer content in finishTransition()
+          // to avoid it being cleared in a race condition
+          ThreadUI.updateHeaderData(function headerUpdated() {
+            if (willSlide) {
+              MessageManager.slide('left', finishTransition);
+            } else {
+              finishTransition();
+            }
+          });
+        // Otherwise, the threadId is a character string
+        // potentially with numbers (e.g. 'thread=de04p4unmnkb')
+        // which points to a new message draft
+        // Participants are not fixed and should added to the composerHeader
+        // Draft content is added to the composer.
+      } else {
+        MessageManager.launchComposer(function() {
+          this.handleActivity(this.activity);
+          this.handleForward(this.forward);
+          ThreadUI.preloadRecipients(threadId);
+          Compose.fromDraft(threadId);
+        }.bind(this));
+      }
+    }
+
+    // If not in a thread we are in:
+    // The new message composer
+    // A group view
+    // The thread list
+    // None of these cases interact with Drafts
+    switch (hash) {
       case '#new':
         ThreadUI.inThread = false;
         MessageManager.launchComposer(function() {
@@ -266,14 +325,18 @@ var MessageManager = {
           this.handleForward(this.forward);
         }.bind(this));
         break;
+      case '#group-view':
+        ThreadUI.groupView();
+      break;
       case '#thread-list':
+        // It will get hoisted, but we only alias this when we are
+        // switching to thread-list
+        var self = this;
         ThreadUI.inThread = false;
 
         //Keep the visible button the :last-child
         var optionsButton = document.getElementById('messages-options-icon');
         optionsButton.parentNode.appendChild(optionsButton);
-
-        ThreadListUI.renderDrafts();
 
         if (this.threadMessages.classList.contains('new')) {
           MessageManager.slide('right', function() {
@@ -293,67 +356,6 @@ var MessageManager = {
           });
         }
         break;
-      case '#group-view':
-        ThreadUI.groupView();
-        break;
-      default:
-        var threadId = Threads.currentId || getId;
-        var draft;
-        if (Number.isNaN(+threadId) && Drafts.has(threadId)) {
-          draft = Drafts.get(threadId);
-          draft.recipients.forEach(function(number) {
-            Contacts.findByPhoneNumber(number, function(records) {
-              if (records.length) {
-                ThreadUI.recipients.add(
-                  Utils.basicContact(number, records[0])
-                );
-              } else {
-                ThreadUI.recipients.add({
-                  number: number
-                });
-              }
-            });
-          });
-          MessageManager.launchComposer(function() {
-            this.handleActivity(this.activity);
-            this.handleForward(this.forward);
-            Compose.fromDraft(draft);
-          }.bind(this));
-        } else {
-          var willSlide = true;
-
-          var finishTransition = function finishTransition() {
-            // hashchanges from #group-view back to #thread=n
-            // are considered "in thread" and should not
-            // trigger a complete re-rendering of the messages
-            // in the thread.
-            if (!ThreadUI.inThread) {
-              ThreadUI.inThread = true;
-              ThreadUI.renderMessages(threadId);
-            }
-            Compose.fromDraft(Drafts.get(threadId));
-          };
-
-          // if we were previously composing a message - remove the class
-          // and skip the "slide" animation
-          if (this.threadMessages.classList.contains('new')) {
-            this.threadMessages.classList.remove('new');
-            willSlide = false;
-          }
-
-          ThreadListUI.mark(threadId, 'read');
-
-          // Update Header
-          ThreadUI.updateHeaderData(function headerUpdated() {
-            if (willSlide) {
-              MessageManager.slide('left', finishTransition);
-            } else {
-              finishTransition();
-            }
-          });
-        }
-
-      break;
     }
 
   },

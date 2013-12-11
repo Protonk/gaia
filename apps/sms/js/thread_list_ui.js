@@ -283,7 +283,7 @@ var ThreadListUI = {
 
         for (var i = 0; i < length; i++) {
           id = list.drafts[i];
-          Drafts.delete(Drafts.get(id));
+          Drafts.delete(id);
           this.removeThread(id);
         }
 
@@ -346,15 +346,17 @@ var ThreadListUI = {
     if (threadless.length) {
       this.setEmpty(false);
     }
+
     // `threadless` is an instance of Drafts.List
     // and only exposes a length property and a forEach method.
     threadless.forEach(function(id) {
       // If there is currently no list item rendered for this
       // draft, then proceed.
-      if (!this.draftRegistry[id]) {
+      if (!this.draftRegistry[id] && Drafts.has(id)) {
         this.appendThread(
-          Thread.create(Drafts.get(id))
+          Thread.fromDraft(Drafts.get(id))
         );
+
       }
     }, this);
 
@@ -452,7 +454,7 @@ var ThreadListUI = {
     // An existing conversation "has" a draft
     // (or it doesn't, depending on the value
     // returned by thread.hasDrafts)
-    var hasDrafts = record.hasDrafts;
+    var hasDrafts = record.hasDraft;
 
     if (hasDrafts) {
       var draft = Drafts.get(id);

@@ -111,7 +111,7 @@
     threadless: function() {
       var keys = [];
       for (var [key, value] of draftIndex) {
-        if (key !== +key && key !== null) {
+        if (Number.isNaN(+key) && value) {
           keys.push(key);
         }
       }

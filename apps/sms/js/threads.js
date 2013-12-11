@@ -7,11 +7,22 @@
   var rthread = /\bthread=(.+)$/;
   var currentId, lastId;
 
-  function cacheId() {
-    var matches = rthread.exec(window.location.hash);
-    currentId = (matches && matches.length) ? +(matches[1].trim()) : null;
+  function idFromHash(hash) {
+    var matches = rthread.exec(hash);
+    return (matches && matches.length) ? (matches[1].trim()) : false;
+  }
 
-    if (currentId !== null && currentId !== lastId) {
+  // Disambiguate between numeric ids which may have been coerced to string
+  // and character ids which cannot be coerced to a number
+  // to Number coercions will result in NaN for character strings
+  function isNumericId(id) {
+    return !Number.isNaN(+id);
+  }
+
+  function cacheId() {
+    currentId = idFromHash(window.location.hash);
+
+    if (!currentId && currentId !== lastId) {
       lastId = currentId;
     }
     return currentId;
@@ -86,8 +97,8 @@
 
   Thread.prototype = {
     constructor: Thread,
-    get hasDrafts() {
-      return Drafts.has(this.id);
+    get hasDraft() {
+      return !!Drafts.has(this.id);
     }
   };
 
@@ -135,6 +146,15 @@
         callback(v, k);
       });
     },
+    idFromHash: function(hash) {
+      return idFromHash(hash);
+    },
+    hasDraft: function(id) {
+      return isNumericId(id) && Drafts.has(id);
+    },
+    isDraft: function(id) {
+      return !isNumericId(id) && Drafts.has(id);
+    },
     get size() {
       // support: gecko 18 - size might be a function
       if (typeof threads.size === 'function') {
@@ -149,7 +169,7 @@
           currentId = cacheId();
         }
       } else {
-        currentId = null;
+        currentId = false;
       }
 
       return currentId;
