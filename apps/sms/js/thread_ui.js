@@ -26,6 +26,11 @@ function thui_mmsAttachmentClick(target) {
   return true;
 }
 
+function getId() {
+  var matches = /\bthread=(.+)$/.exec(window.location.hash);
+  return (matches && matches.length) ? (matches[1].trim()) : null;
+}
+
 // reduce the Composer.getContent() into slide format used by SMIL.generate some
 // day in the future, we should make the SMIL and Compose use the same format
 function thui_generateSmilSlides(slides, content) {
@@ -417,7 +422,8 @@ var ThreadUI = global.ThreadUI = {
   },
 
   assimilateRecipients: function thui_assimilateRecipients() {
-    var isNew = window.location.hash === '#new';
+    var isNew = window.location.hash === '#new' ||
+      Drafts.has(Threads.currentId);
     var node = this.recipientsList.lastChild;
     var typed;
 
@@ -1297,7 +1303,7 @@ var ThreadUI = global.ThreadUI = {
     this.initializeRendering();
 
     var filter = new MozSmsFilter();
-    filter.threadId = threadId;
+    filter.threadId = +threadId;
 
     // We call getMessages with callbacks
     var renderingOptions = {
@@ -1938,7 +1944,7 @@ var ThreadUI = global.ThreadUI = {
     // If the message we sent is associated with a threadId
     // which has a draft, delete it
     // Use Drafts.byThreadId as it is mocked during testing
-    if (Drafts.byThreadId(threadId).length) {
+    if (Drafts.has(threadId)) {
       Drafts.delete({
         threadId: threadId
       });
@@ -2500,31 +2506,29 @@ var ThreadUI = global.ThreadUI = {
   saveMessageDraft: function thui_saveMessageDraft() {
     var draft, recipients, content, thread, threadId, type;
 
+    // TODO Also store subject
     content = Compose.getContent();
     type = Compose.type;
 
-    // TODO Also store subject
+    threadId = Threads.currentId || getId();
 
-    if (Threads.active) {
-      recipients = Threads.active.participants;
-      threadId = Threads.currentId;
-    } else {
-      recipients = this.recipients.numbers;
-
+    // If we are in the new message composer or otherwise calling
+    // saveMessageDraft without a current draft or thread
+    // match recipients
+    if (!threadId) {
       // Pick out the threadId that matches
       // all the recipients in this draft.
-      Threads.forEach(function(t, id) {
+      Drafts.forEach(function(t, id) {
         if (Utils.multiRecipientMatch(t.participants, recipients)) {
           threadId = id;
         }
       });
-      threadId = threadId || null;
     }
 
     draft = new Draft({
-      recipients: recipients,
+      recipients: this.recipients.numbers,
       content: content,
-      threadId: threadId,
+      id: threadId,
       type: type
     });
 
@@ -2532,8 +2536,8 @@ var ThreadUI = global.ThreadUI = {
 
     // If an existing thread list item is associated with
     // the presently saved draft, update the displayed Thread
-    if (threadId) {
-      thread = Threads.active || Threads.get(threadId);
+    // We may have found a threadId by matching recipients
+    if (thread = Threads.get(+threadId)) {
 
       // Overwrite the thread's own timestamp with
       // the drafts timestamp.
@@ -2541,7 +2545,6 @@ var ThreadUI = global.ThreadUI = {
 
       ThreadListUI.updateThread(thread);
     }
-    MessageManager.draft = null;
   }
 };
 

@@ -47,7 +47,7 @@
     }
 
     return new Thread({
-      id: record.threadId,
+      id: record.id,
       participants: participants,
       body: record.body,
       timestamp: record.timestamp,
@@ -57,8 +57,6 @@
   };
 
   Thread.fromDraft = function(record, options) {
-    var participants = record.recipients && record.recipients.length ?
-      record.recipients : [''];
 
     var body = record.content && record.content.length ?
       record.content.find(function(content) {
@@ -68,8 +66,8 @@
       }) : '';
 
     return new Thread({
-      id: record.threadId || record.id,
-      participants: participants,
+      id: record.id,
+      participants: record.recipients,
       body: body,
       timestamp: new Date(record.timestamp),
       unreadCount: (options && !options.read) ? 1 : 0,
@@ -88,11 +86,8 @@
 
   Thread.prototype = {
     constructor: Thread,
-    get drafts() {
-      return Drafts.byThreadId(this.id);
-    },
     get hasDrafts() {
-      return !!this.drafts.length;
+      return Drafts.has(this.id);
     }
   };
 
@@ -125,16 +120,12 @@
       return threads.has(+id);
     },
     delete: function(id) {
-      id = +id;
-
-      var thread = this.get(id);
-
-      if (thread && thread.hasDrafts) {
+      if (Drafts.has(id)) {
         Drafts.delete({
           threadId: id
         });
       }
-      return threads.delete(id);
+      return threads.delete(+id);
     },
     clear: function() {
       threads = new Map();
@@ -167,7 +158,7 @@
       return lastId;
     },
     get active() {
-      return threads.get(+Threads.currentId);
+      return threads.get(Threads.currentId);
     }
   };
 

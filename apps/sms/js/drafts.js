@@ -1,35 +1,25 @@
-/*global asyncStorage, Utils, isEqual */
+/*global asyncStorage */
 (function(exports) {
   'use strict';
   var draftIndex = new Map();
   var isCached = false;
 
   /**
-   * Checks if two drafts are distinct based on
-   * the equality of the following fields:
+   * guid
    *
-   * recipients
-   * content
-   * subject
+   * Generate a id for drafts which are not associated with
+   * existing threads
    *
-   * @param {Draft} a draft to check
-   * @param {Draft} b draft to check
-   *
-   * @return {Boolean} true if the drafts differ on those fields
+   * @return {String} A relatively unique string id
    */
-  function isDistinct(a, b) {
-    if (!a || !b) {
-      // if either or both are falsey
-      return true;
-    } else {
-      // Tests for equality of recipient arrays without regard to order
-      if (!Utils.multiRecipientMatch(a.recipients, b.recipients)) {
-        return true;
-      }
-      // else check whether content or subject match
-      return !isEqual(a.content, b.content) ||
-        a.subject !== b.subject;
-    }
+  function guid() {
+    // Prepend 'd' to ensure this won't coerce to a number
+    var id = 'd';
+    // Only need to grab 'entropy' from the last part of the date
+    id += Date.now().toString(36).substr(-3);
+    // To avoid the possible case where two guid calls in the same
+    // millisecond cause a collision we pad with some random characters
+    return id += (1 + Math.random()).toString(36).substring(2, 10);
   }
 
   /**
@@ -37,13 +27,7 @@
    *
    * A collection of active Draft objects, indexed by thread id.
    */
-  var Drafts = exports.Drafts = {
-    /**
-     * List
-     *
-     * An Array-like object that contains Draft objects.
-     */
-    List: DraftList,
+  var Drafts = {
     /**
      * add
      *
@@ -58,34 +42,11 @@
      * @return {Drafts} return the Drafts object.
      */
     add: function(draft) {
-      var threadId;
-      var thread;
-      var stored;
-      var canSkipDistinction = false;
-
       if (draft) {
         if (!(draft instanceof Draft)) {
           draft = new Draft(draft);
         }
-
-        threadId = draft.threadId || null;
-        thread = draftIndex.get(threadId) || [];
-        stored = thread[thread.length - 1];
-
-        // If there is an existing draft for this
-        // threadId, delete it.
-        if (threadId !== null && thread.length) {
-          this.delete(stored);
-          canSkipDistinction = true;
-        }
-
-        // If the new draft is distinct from the stored one
-        // then push and save a new draft
-        if (canSkipDistinction || isDistinct(stored, draft)) {
-          thread.push(draft);
-          draftIndex.set(threadId, thread);
-          this.store();
-        }
+        draftIndex.set(draft.id, draft);
       }
       return this;
     },
@@ -94,95 +55,40 @@
      *
      * Delete a draft record from the collection.
      *
-     * @param  {Draft} draft draft to delete.
+     * @param  {[Draft|(Number|String)]} draft draft to delete, optionally just
+     *                                   the id.
      *
      * @return {Drafts} return the Drafts object.
      */
     delete: function(draft) {
-      var thread;
-      var index;
-
-      if (draft) {
-        thread = draftIndex.get(draft.threadId);
-        if (!thread) {
-          return this;
-        }
-        index = thread.indexOf(draft);
-
-        // For cases where the provided "draft" object
-        // could not be found by object _identity_:
-        //  - If a thread was found by draft.threadId, but
-        //    draft had no id property, delete all drafts
-        //    for this threadId
-        //  - Otherwise, the draft object might be a copy,
-        //    or manually composed "draft object", so iterate
-        //    the drafts and look for the one matching the
-        //    provided draft.id.
-        if (index === -1) {
-          if (thread && typeof draft.id === 'undefined') {
-            thread.length = 0;
-          } else {
-            if (thread) {
-              thread.some(function(stored, i) {
-                if (stored.id === draft.id) {
-                  index = i;
-                  return true;
-                }
-              });
-            }
-          }
-        }
-
-        if (index > -1) {
-          thread.splice(index, 1);
-        }
-      }
+      draftIndex.delete(draft && (draft.id || draft));
       return this;
-    },
-    /**
-     * byThreadId
-     *
-     * Returns all the drafts for the specified thread id.
-     *
-     * Calling with `null` will return a `Draft.List` object
-     * containing all of the threadless draft objects.
-     *
-     * eg.
-     *
-     *   Drafts.byThreadId(null)
-     *
-     *
-     *
-     * @param  {Number}  id thread id of the drafts to return.
-     *
-     * @return {Draft.List}  return Draft.List containing drafts for thread id
-     */
-    byThreadId: function(id) {
-      return new Drafts.List(draftIndex.get(id));
     },
     /**
      * get
      *
-     * Return the draft object with the specified id.
+     * Returns all the drafts for the specified thread id.
      *
-     * @param  {Number}  id thread id of the drafts to return.
+     * @param  {[(Number|String)]}  id id of the drafts to return.
      *
-     * @return {Draft}  Draft object.
+     * @return {Draft|Boolean}  return Draft object of thread or false if
+     *                          no Draft exists.
      */
     get: function(id) {
-      var draft;
-
-      draftIndex.forEach(function(records, threadId) {
-        if (!draft) {
-          draft = records.find(function(record) {
-            // Ensure a number is used for the comparison,
-            // as this value may come from a dataset property.
-            return record.id === +id;
-          });
-        }
-      });
-
-      return draft;
+      var recalled = draftIndex.get(id);
+      return recalled ? new Draft(recalled) : false;
+    },
+    /**
+     * has
+     *
+     * Returns all the drafts for the specified thread id.
+     *
+     * @param  {[(Number|String)]}  id id of the drafts to return.
+     *
+     * @return {Boolean} return true if a draft exists in the index
+     */
+    has: function(id) {
+      return draftIndex.has(id);
     },
     /**
      * clear
@@ -194,6 +100,27 @@
     clear: function() {
       draftIndex = new Map();
       return this;
+    },
+    /**
+     * threadless
+     *
+     * Get ids for drafts not associated with sent message threads
+     *
+     * @return {Array} return an array of ids
+     */
+    threadless: function() {
+      var keys = [];
+      for (var [key, value] of draftIndex) {
+        if (key !== +key && key !== null) {
+          keys.push(key);
+        }
+      }
+      return keys;
+    },
+    forEach: function(callback) {
+      draftIndex.forEach(function(v, k) {
+        callback(v, k);
+      });
     },
     /**
      * store
@@ -222,15 +149,9 @@
      *                            arguments.
      * @return {Undefined} void return.
      */
-    request: function(callback) {
+    request: function() {
       function handler() {
         isCached = true;
-
-        if (typeof callback === 'function') {
-          // When a callback is provided, call it with
-          // a draft list of threadless drafts
-          callback(Drafts.byThreadId(null));
-        }
       }
 
       // Loading from storage only happens when the
@@ -241,92 +162,11 @@
         });
       } else {
         asyncStorage.getItem('draft index', function(records) {
-          var rlength, drafts, dlength;
 
-          // Revive as Draft objects by constructing new Draft from
-          // each plain object returned from storage.
-          if (records !== null) {
-            /*
-              record[0] is the threadId or null key
-              record[1] is the array of draft objects associated
-                         with that threadId or null key
-
-              Replace each plain object in record[1] with a
-              real draft object.
-            */
-            rlength = records.length;
-
-            for (var i = 0; i < rlength; i++) {
-              drafts = records[i][1];
-              dlength = drafts.length;
-
-              for (var j = 0; j < dlength; j++) {
-                drafts[j] = new Draft(drafts[j]);
-              }
-            }
-          }
           draftIndex = new Map(records || []);
 
           handler();
         });
-      }
-    }
-  };
-
-  /**
-   * DraftList
-   *
-   * An Array-like object containing Draft objects.
-   *
-   * @param  {Array}  initializer  array containing Draft objects.
-   *
-   * @return {Undefined} void return.
-   */
-  var priv = new WeakMap();
-  function DraftList(initializer) {
-    priv.set(this, initializer || []);
-  }
-
-  DraftList.prototype = {
-    /**
-     * length
-     *
-     * A readonly accessor that returns the number of drafts.
-     *
-     * @return {Number} return the length of the drafts list.
-     */
-    get length() {
-      return priv.get(this).length;
-    },
-    /**
-     * latest
-     *
-     * The latest draft for this Drafts.List
-     */
-    get latest() {
-      var list = priv.get(this);
-      return list.length ? list[list.length - 1] : null;
-    },
-    /**
-     * forEach
-     *
-     * Iterate over the list of Draft objects
-     * and call callback on each.
-     *
-     * @param  {Function} callback to call on each draft.
-     * @param  {Object} thisArg set callback's this.
-     *
-     * @return {Undefined} void return.
-     */
-    forEach: function(callback, thisArg) {
-      var drafts = priv.get(this);
-
-      if (thisArg) {
-        callback = callback.bind(thisArg);
-      }
-
-      for (var i = 0; i < drafts.length; i++) {
-        callback(drafts[i]);
       }
     }
   };
@@ -343,22 +183,22 @@
   function Draft(opts) {
     var draft = opts || {};
 
-    if (draft.id && typeof draft.id !== 'number') {
-      throw new Error('Draft id must be a number');
-    }
-
-    this.id = draft.id || guid();
-    this.recipients = draft.recipients || [];
+    this.recipients = draft.recipients || [''];
     this.content = draft.content || [];
     this.subject = draft.subject || '';
     this.timestamp = draft.timestamp || Date.now();
-    this.threadId = draft.threadId || null;
-    this.type = draft.type;
+    this.id = draft.id || guid();
+    this.type = draft.type || 'sms';
   }
 
-  function guid() {
-    return +(Date.now() + '' + (Math.random() * 1000 | 0));
-  }
+  Draft.prototype = {
+    constructor: Draft,
+    get hasDrafts() {
+      return true;
+    }
+  };
 
   exports.Draft = Draft;
+  exports.Drafts = Drafts;
+
 }(this));

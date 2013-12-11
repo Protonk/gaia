@@ -257,7 +257,6 @@
         subject: '',
         content: ['This is a draft SMS, with no recipient'],
         timestamp: timestamp,
-        threadId: null,
         type: 'sms'
       },
       {
@@ -265,7 +264,6 @@
         subject: '',
         content: ['This is a draft SMS, with a recipient, but no thread'],
         timestamp: timestamp - 3600000,
-        threadId: null,
         type: 'sms'
       },
       {

@@ -8,7 +8,6 @@
 'use strict';
 
 var MessageManager = {
-  draft: null,
   activity: null,
   forward: null,
   init: function mm_init(callback) {
@@ -149,28 +148,6 @@ var MessageManager = {
 
   launchComposer: function mm_launchComposer(callback) {
     ThreadUI.cleanFields(true);
-    var draft = MessageManager.draft || Drafts.get(Threads.currentId);
-    if (draft) {
-      // Recipients will exist for draft messages in threads
-      // Otherwise find them from draft recipient numbers
-      draft.recipients.forEach(function(number) {
-        Contacts.findByPhoneNumber(number, function(records) {
-          if (records.length) {
-            ThreadUI.recipients.add(
-              Utils.basicContact(number, records[0])
-            );
-          } else {
-            ThreadUI.recipients.add({
-              number: number
-            });
-          }
-        });
-      });
-    }
-
-    // Will preload the composer with draft content
-    // if there is no draft content, this is a noop
-    Compose.fromDraft(draft);
     this.threadMessages.classList.add('new');
     this.slide('left', function() {
       callback && callback();
@@ -266,6 +243,11 @@ var MessageManager = {
     // when changing UI panels
     document.activeElement.blur();
 
+    function getId() {
+      var matches = /\bthread=(.+)$/.exec(window.location.hash);
+      return (matches && matches.length) ? (matches[1].trim()) : null;
+    }
+
     // Group Participants should never persist any hash changes
     ThreadUI.groupView.reset();
 
@@ -315,21 +297,43 @@ var MessageManager = {
         ThreadUI.groupView();
         break;
       default:
-        var threadId = Threads.currentId;
-        var willSlide = true;
+        var threadId = Threads.currentId || getId;
+        var draft;
+        if (Number.isNaN(+threadId) && Drafts.has(threadId)) {
+          draft = Drafts.get(threadId);
+          draft.recipients.forEach(function(number) {
+            Contacts.findByPhoneNumber(number, function(records) {
+              if (records.length) {
+                ThreadUI.recipients.add(
+                  Utils.basicContact(number, records[0])
+                );
+              } else {
+                ThreadUI.recipients.add({
+                  number: number
+                });
+              }
+            });
+          });
+          MessageManager.launchComposer(function() {
+            this.handleActivity(this.activity);
+            this.handleForward(this.forward);
+            Compose.fromDraft(draft);
+          }.bind(this));
+        } else {
+          var willSlide = true;
 
-        var finishTransition = function finishTransition() {
-          // hashchanges from #group-view back to #thread=n
-          // are considered "in thread" and should not
-          // trigger a complete re-rendering of the messages
-          // in the thread.
-          if (!ThreadUI.inThread) {
-            ThreadUI.inThread = true;
-            ThreadUI.renderMessages(threadId);
-          }
-        };
+          var finishTransition = function finishTransition() {
+            // hashchanges from #group-view back to #thread=n
+            // are considered "in thread" and should not
+            // trigger a complete re-rendering of the messages
+            // in the thread.
+            if (!ThreadUI.inThread) {
+              ThreadUI.inThread = true;
+              ThreadUI.renderMessages(threadId);
+            }
+            Compose.fromDraft(Drafts.get(threadId));
+          };
 
-        if (threadId) {
           // if we were previously composing a message - remove the class
           // and skip the "slide" animation
           if (this.threadMessages.classList.contains('new')) {
@@ -347,8 +351,8 @@ var MessageManager = {
               finishTransition();
             }
           });
-          Compose.fromDraft(this.draft);
         }
+
       break;
     }
 
@@ -400,9 +404,9 @@ var MessageManager = {
       each: callback function invoked for each message
       end: callback function invoked when cursor is "done"
       endArgs: specify arguments for the "end" callback
-      done: callback function invoked when we stopped iterating, either because
-            it's the end or because it was stopped. It's invoked after the "end"
-            callback.
+      done: callback function invoked when we stopped iterating, either
+            because it's the end or because it was stopped.
+            Invoked after the "end" callback.
       filter: a MozMessageFilter or similar object
       invert: option to invert the selection
     }

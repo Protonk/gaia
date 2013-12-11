@@ -97,20 +97,18 @@ var ThreadListUI = {
   },
 
   setContact: function thlui_setContact(node) {
-    var thread = Threads.get(node.dataset.threadId);
-    var draft = Drafts.get(node.dataset.threadId);
+    var id = node.dataset.id;
+    var thread = Threads.get(id) || Thread.fromDraft(Drafts.get(id));
     var number, others;
+
 
     if (thread) {
       number = thread.participants[0];
       others = thread.participants.length - 1;
-    } else if (draft) {
-      number = draft.recipients[0];
-      others = draft.recipients.length - 1;
     } else {
       console.error(
         'This node does not look like a displayed list item: ',
-        node.dataset.threadId
+        id
       );
       return;
     }
@@ -155,7 +153,6 @@ var ThreadListUI = {
   },
 
   handleEvent: function thlui_handleEvent(event) {
-    var draftId;
 
     switch (event.type) {
       case 'click':
@@ -164,10 +161,6 @@ var ThreadListUI = {
         // been a checkbox and proceed w/ validation condition
         if (event.target.type && event.target.type === 'checkbox') {
           this.checkInputs();
-        }
-
-        if ((draftId = this.draftLinks.get(event.target))) {
-          MessageManager.draft = Drafts.get(draftId);
         }
 
         break;
@@ -348,27 +341,24 @@ var ThreadListUI = {
   },
 
   renderDrafts: function thlui_renderDrafts() {
-    // Request and render all thread-less drafts.
-    Drafts.request(function() {
-      var threadless = Drafts.byThreadId(null);
+    var threadless = Drafts.threadless();
 
-      if (threadless.length) {
-        this.setEmpty(false);
+    if (threadless.length) {
+      this.setEmpty(false);
+    }
+    // `threadless` is an instance of Drafts.List
+    // and only exposes a length property and a forEach method.
+    threadless.forEach(function(id) {
+      // If there is currently no list item rendered for this
+      // draft, then proceed.
+      if (!this.draftRegistry[id]) {
+        this.appendThread(
+          Thread.create(Drafts.get(id))
+        );
       }
-      // `threadless` is an instance of Drafts.List
-      // and only exposes a length property and a forEach method.
-      threadless.forEach(function(draft) {
-        // If there is currently no list item rendered for this
-        // draft, then proceed.
-        if (!this.draftRegistry[draft.id]) {
-          this.appendThread(
-            Thread.create(draft)
-          );
-        }
-      }, this);
+    }, this);
 
-      FixedHeader.refresh();
-    }.bind(this));
+    FixedHeader.refresh();
   },
 
   renderThreads: function thlui_renderThreads(threads, renderCallback) {
@@ -444,27 +434,28 @@ var ThreadListUI = {
   },
 
   createThread: function thlui_createThread(record) {
+    var id = record.id;
+
+    // Get or create a thread
+    record = Threads.get(+id) || Thread.fromDraft(Drafts.get(id));
+
     // Create DOM element
     var li = document.createElement('li');
+
+
     var timestamp = +record.timestamp;
     var lastMessageType = record.lastMessageType;
     var participants = record.participants;
     var number = participants[0];
-    var id = record.id;
     var bodyHTML = Template.escape(record.body || '');
-    var thread = Threads.get(id);
-    var draft, draftId;
 
-    // A new conversation "is" a draft
-    var isDraft = typeof thread === 'undefined';
-
-    // A an existing conversation "has" a draft
+    // An existing conversation "has" a draft
     // (or it doesn't, depending on the value
     // returned by thread.hasDrafts)
-    var hasDrafts = isDraft ? false : thread.hasDrafts;
+    var hasDrafts = record.hasDrafts;
 
     if (hasDrafts) {
-      draft = Drafts.byThreadId(thread.id).latest;
+      var draft = Drafts.get(id);
       timestamp = Math.max(draft.timestamp, timestamp);
       bodyHTML = draft.content.find(function(content) {
         if (typeof content === 'string') {
@@ -474,7 +465,7 @@ var ThreadListUI = {
     }
 
     li.id = 'thread-' + id;
-    li.dataset.threadId = id;
+    li.dataset.id = id;
     li.dataset.time = timestamp;
     li.dataset.lastMessageType = lastMessageType;
 
@@ -482,30 +473,27 @@ var ThreadListUI = {
       li.classList.add('unread');
     }
 
-    if (hasDrafts || isDraft) {
+    if (hasDrafts) {
       // Set the "draft" visual indication
       li.classList.add('draft');
 
-      if (hasDrafts) {
+      if (id === +id) {
         li.classList.add('has-draft');
       } else {
         li.classList.add('is-draft');
       }
 
-
-      draftId = hasDrafts ? draft.id : record.id;
-
       // Used in renderDrafts as an efficient mechanism
       // for checking whether a draft of a specific ID
       // has been rendered.
-      this.draftRegistry[draftId] = true;
+      this.draftRegistry[id] = true;
     }
 
     // Render markup with thread data
     li.innerHTML = this.tmpl.thread.interpolate({
-      hash: isDraft ? '#new' : '#thread=' + id,
-      mode: isDraft ? 'drafts' : 'threads',
-      id: isDraft ? draftId : id,
+      hash: '#thread=' + id,
+      mode: hasDrafts ? 'drafts' : 'threads',
+      id: id,
       number: number,
       bodyHTML: bodyHTML,
       timestamp: String(timestamp)
@@ -514,13 +502,6 @@ var ThreadListUI = {
     });
 
     TimeHeaders.update(li.querySelector('time'));
-
-    if (draftId) {
-      // Used in handleEvent to set the MessageManager.draft object
-      this.draftLinks.set(
-        li.querySelector('a'), draftId
-      );
-    }
 
     return li;
   },
@@ -577,11 +558,6 @@ var ThreadListUI = {
 
   appendThread: function thlui_appendThread(thread) {
     var timestamp = +thread.timestamp;
-    var drafts = Drafts.byThreadId(thread.id);
-
-    if (drafts.length) {
-      timestamp = Math.max(drafts.latest.timestamp, timestamp);
-    }
 
     // We create the DOM element of the thread
     var node = this.createThread(thread);
