@@ -19,15 +19,6 @@
     return !Number.isNaN(+id);
   }
 
-  function cacheId() {
-    currentId = idFromHash(window.location.hash);
-
-    if (!currentId && currentId !== lastId) {
-      lastId = currentId;
-    }
-    return currentId;
-  }
-
   function Thread(thread) {
     var length = Thread.FIELDS.length;
     var key;
@@ -78,7 +69,7 @@
 
     return new Thread({
       id: record.id,
-      participants: record.recipients,
+      participants: record.recipients || [''],
       body: body,
       timestamp: new Date(record.timestamp),
       unreadCount: (options && !options.read) ? 1 : 0,
@@ -125,16 +116,16 @@
       return threads.set(id, new Thread(thread));
     },
     get: function(id) {
-      return threads.get(+id);
+      return isNumericId(id) ?
+        threads.get(+id) : Thread.fromDraft(Drafts.get(id));
     },
     has: function(id) {
-      return threads.has(+id);
+      return isNumericId(id) ? threads.has(+id) : Drafts.has(id);
     },
     delete: function(id) {
+      // Drafts for numeric and non-numeric ids are deleted
       if (Drafts.has(id)) {
-        Drafts.delete({
-          threadId: id
-        });
+        Drafts.delete(id);
       }
       return threads.delete(+id);
     },
@@ -152,8 +143,8 @@
     hasDraft: function(id) {
       return isNumericId(id) && Drafts.has(id);
     },
-    isDraft: function(id) {
-      return !isNumericId(id) && Drafts.has(id);
+    isDraftId: function(id) {
+      return !isNumericId(id);
     },
     get size() {
       // support: gecko 18 - size might be a function
@@ -163,19 +154,15 @@
       return +threads.size;
     },
     get currentId() {
-
-      if (window.location.hash.startsWith('#thread=')) {
-        if (!currentId) {
-          currentId = cacheId();
-        }
-      } else {
-        currentId = false;
+      var current = idFromHash(window.location.hash);
+      if (!current && current !== lastId) {
+        lastId = current;
       }
 
-      return currentId;
+      return current;
     },
     get lastId() {
-      return lastId;
+      return lastId || currentId;
     },
     get active() {
       return threads.get(Threads.currentId);
@@ -184,5 +171,5 @@
 
   exports.Thread = Thread;
 
-  window.addEventListener('hashchange', cacheId);
+  window.addEventListener('hashchange', currentId);
 }(this));

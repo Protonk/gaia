@@ -438,23 +438,24 @@ var ThreadListUI = {
   createThread: function thlui_createThread(record) {
     var id = record.id;
 
-    // Get or create a thread
-    record = Threads.get(+id) || Thread.fromDraft(Drafts.get(id));
-
+    var thread = Threads.get(id);
+    if (!thread) {
+      return;
+    }
     // Create DOM element
     var li = document.createElement('li');
 
 
-    var timestamp = +record.timestamp;
-    var lastMessageType = record.lastMessageType;
-    var participants = record.participants;
+    var timestamp = +thread.timestamp;
+    var lastMessageType = thread.lastMessageType;
+    var participants = thread.participants;
     var number = participants[0];
-    var bodyHTML = Template.escape(record.body || '');
+    var bodyHTML = Template.escape(thread.body || '');
 
     // An existing conversation "has" a draft
     // (or it doesn't, depending on the value
     // returned by thread.hasDrafts)
-    var hasDrafts = record.hasDraft;
+    var hasDrafts = thread.hasDraft;
 
     if (hasDrafts) {
       var draft = Drafts.get(id);

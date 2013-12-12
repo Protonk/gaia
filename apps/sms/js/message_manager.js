@@ -263,7 +263,7 @@ var MessageManager = {
       // If the id is numeric (e.g. 'thread=15'):
       // participants are fixed and not editable
       // Draft content will only impact the composer
-      if (!Number.isNaN(+threadId)) {
+      if (!Threads.isDraftId(threadId)) {
           var willSlide = true;
           // if we were previously composing a message - remove the class
           // and skip the "slide" animation

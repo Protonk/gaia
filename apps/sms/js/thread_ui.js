@@ -725,7 +725,8 @@ var ThreadUI = global.ThreadUI = {
       this.stopRendering();
 
       var currentActivity = ActivityHandler.currentActivity.new;
-      var discard, discardDraft;
+      var discard, discardDraft, current;
+      current = Threads.currentId;
 
       if (currentActivity) {
         currentActivity.postResult({ success: true });
@@ -739,12 +740,11 @@ var ThreadUI = global.ThreadUI = {
       }).bind(this);
 
       discardDraft = (function() {
-        Drafts.delete(Threads.currentId);
+        Drafts.delete(current);
         // Force ThreadList to re-render threads
         // whose draft status has changed
-        if (Threads.active) {
-          ThreadListUI.updateThread(Threads.active);
-        }
+        ThreadListUI.updateThread(current);
+
         discard();
       }).bind(this);
 
@@ -757,31 +757,13 @@ var ThreadUI = global.ThreadUI = {
       // do not prompt to save a draft and remove saved drafts
       // as the user deleted them manually
       if (Compose.isEmpty() &&
-        (Threads.active || this.recipients.length === 0)) {
+        (!Threads.isDraftId(current) || this.recipients.length === 0)) {
         discardDraft();
-        return;
+      } else {
+        this.saveMessageDraft();
       }
 
-      var options = {
-        items: [
-          {
-            l10nId: 'save-as-draft',
-            method: function onsave() {
-              this.saveMessageDraft();
-              discard();
-            }.bind(this)
-          },
-          {
-            l10nId: 'discard-message',
-            method: discardDraft
-          },
-          {
-            l10nId: 'cancel'
-          }
-        ]
-      };
-
-      new OptionMenu(options).show();
+      discard();
 
     }).bind(this);
 
@@ -1149,13 +1131,9 @@ var ThreadUI = global.ThreadUI = {
 
   // Method for updating the header with the info retrieved from Contacts API
   updateHeaderData: function thui_updateHeaderData(callback) {
-    var thread, number, others;
-
-    if (Threads.currentId) {
-      thread = Threads.active;
-    }
-
-    if (!thread) {
+    var thread, number, others, current;
+    current = Threads.currentId;
+    if (!current) {
       if (typeof callback === 'function') {
         callback();
       }
@@ -1165,6 +1143,8 @@ var ThreadUI = global.ThreadUI = {
     if (window.location.hash === '#group-view') {
       return;
     }
+    // Load the current thread
+    thread = Threads.get(current);
 
     number = thread.participants[0];
     others = thread.participants.length - 1;
@@ -1825,7 +1805,7 @@ var ThreadUI = global.ThreadUI = {
 
   cleanFields: function thui_cleanFields(forceClean) {
     var hash = window.location.hash;
-    var isDraft = Threads.isDraft(Threads.idFromHash(hash));
+    var isDraft = Threads.isDraftId(Threads.idFromHash(hash));
     var clean = (function clean() {
       // Compose.clear might cause a conversion from mms -> sms
       // Therefore we're reseting the message type here because
@@ -2260,7 +2240,9 @@ var ThreadUI = global.ThreadUI = {
   },
 
   onHeaderActivation: function thui_onHeaderActivation() {
-    var participants = Threads.active && Threads.active.participants;
+    var current = Threads.currentId;
+    var thread = Threads.get(current);
+    var participants = thread.participants;
 
     // >1 Participants will enter "group view"
     if (participants && participants.length > 1) {
@@ -2269,7 +2251,7 @@ var ThreadUI = global.ThreadUI = {
     }
 
     // Do nothing while in participants list view.
-    if (!Threads.active && Threads.lastId) {
+    if (!current && Threads.lastId) {
       return;
     }
 
@@ -2334,8 +2316,8 @@ var ThreadUI = global.ThreadUI = {
   },
 
   groupView: function thui_groupView() {
-    var lastId = Threads.lastId;
-    var participants = lastId && Threads.get(lastId).participants;
+    var lastThread = Threads.get(Threads.lastId);
+    var participants = lastThread.participants;
     var ul = this.participantsList;
 
     this.groupView.reset();
@@ -2506,68 +2488,53 @@ var ThreadUI = global.ThreadUI = {
   },
 
   saveMessageDraft: function thui_saveMessageDraft() {
-    var draft, recipients, thread, threadId;
 
-
-    recipients = ThreadUI.recipients.numbers;
-
-    // If we are in the new message composer or otherwise calling
-    // saveMessageDraft without recipients
-    // Attempt to match against existing threads
-    var matched = false;
-    if (window.location.hash.indexOf('#new') !== -1 || !recipients) {
-      // This is ugly as sin
-      Threads.forEach(function(t, id) {
-        if (!matched) {
-          if (Utils.multiRecipientMatch(t.participants, recipients)) {
-            threadId = id;
-            matched = true;
-          }
-        }
-      });
-      Drafts.forEach(function(t, id) {
-        if (!matched) {
-          if (Utils.multiRecipientMatch(t.recipients, recipients)) {
-            threadId = id;
-            matched = true;
-          }
-        }
-      });
-    }
-    // If we don't match by recipients
-    // The thread can be associated with a thread
-    // or a new message conversation
-    var current = Threads.currentId;
-
-    if (Drafts.has(current) || Threads.has(current)) {
-      threadId = current;
-    }
-
-    draft = new Draft({
-      recipients: recipients,
+    var draft = new Draft({
+      recipients: ThreadUI.recipients.numbers,
       content: Compose.getContent(),
-      // If the id is still falsey here
-      // a new threadId will be generated and associated with the
-      // draft
-      id: threadId,
+      // Draft is generated without an id.
+      // We will fill one based on state
+      // If unfilled, a new thread is created using the generated id
       type: Compose.type
       // TODO Also store subject
     });
+    // Current thread id, either numeric or not
+    // Falsey iff we are not in a thread
+    var current = Threads.currentId;
 
-    Drafts.add(draft);
-    // If we matched to a thread via recipient matching
-    // remove that thread
-    if (matched) {
-      ThreadListUI.removeThread(threadId);
+    // We are in the new message composer
+    // Attempt to match against existing threads with no recipients
+    if (!current && window.location.hash.indexOf('#new') !== -1) {
+      var matched = false;
+      if (!draft.recipients.length) {
+        Drafts.forEach(function(t, id) {
+          if (!matched && !t.recipients.length) {
+            draft.id = id;
+            matched = true;
+          }
+        });
+      }
+      // Add the draft to the index
+      // If we matched it to a no recipient thread
+      // update the threadlist
+      // Otherwise create a new thread in the threadlist
+      Drafts.add(draft);
+      if (matched) {
+        ThreadListUI.updateThread(Threads.get(draft.id));
+      } else {
+        ThreadListUI.createThread(draft);
+      }
+      return;
     }
-    // If the draft is assoicated with an existing thread
-    // Update it, otherwise create a new thread
-    if (threadId) {
-      thread = Threads.hasDraft(threadId) ? Threads.get(threadId) : draft;
-      // Update the thread in the threadlist;
-      ThreadListUI.updateThread(thread);
-    } else {
-      ThreadListUI.createThread(draft);
+
+    // If we don't match by recipients
+    // The thread can be associated with a thread
+    // or a new message conversation
+
+    if (Threads.has(current)) {
+      draft.id = current;
+      Drafts.add(draft);
+      ThreadListUI.updateThread(Threads.get(draft.id));
     }
 
   },
